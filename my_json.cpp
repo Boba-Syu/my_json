@@ -62,9 +62,7 @@ JSONParseResult MyJSON::parseValue(MyContext &context) {
 JSONParseResult MyJSON::parseNull(MyContext &context) {
     const char *value = "null";
     JSONParseResult ret = parseValue(context, value, JSON_NULL);
-    if (ret == PARSE_OK) {
-        value_.jVal = nullptr;
-    }
+
     return ret;
 }
 
@@ -190,7 +188,7 @@ void MyJSON::encodeUTF8(MyContext &context, unsigned u) {
     }
 }
 
-JSONParseResult MyJSON::parseString(MyContext &context) {
+JSONParseResult MyJSON::parseStringRaw(MyJSON::MyContext &context, std::string &value) {
     assert(*context.json == '\"');
     context.json++;
     const char *p = context.json;
@@ -198,9 +196,8 @@ JSONParseResult MyJSON::parseString(MyContext &context) {
         char ch = *p++;
         switch (ch) {
             case '\"':
-                setString(context.chStack);
+                setString(context.chStack, value);
                 context.json = p;
-                type_ = JSON_STRING;
                 return PARSE_OK;
             case '\0':
                 return PARSE_MISS_QUOTATION_MARK;
@@ -256,9 +253,18 @@ JSONParseResult MyJSON::parseString(MyContext &context) {
     }
 }
 
-void MyJSON::setString(std::stack<char> &chStack) {
+JSONParseResult MyJSON::parseString(MyContext &context) {
+    auto ret = parseStringRaw(context, value_.sVal);
+    if (ret == PARSE_OK) {
+        type_ = JSON_STRING;
+    }
+    return ret;
+}
+
+void MyJSON::setString(std::stack<char> &chStack, std::string &value) {
+    value = "";
     while (!chStack.empty()) {
-        value_.sVal = chStack.top() + value_.sVal;
+        value = chStack.top() + value;
         chStack.pop();
     }
 }
@@ -299,7 +305,54 @@ JSONParseResult MyJSON::parseArray(MyContext &context) {
 
 JSONParseResult MyJSON::parseObject(MyJSON::MyContext &context) {
     assert(*context.json == '{');
+    context.json++;
     JSONParseResult ret = PARSE_OK;
+    JsonMember jsonMember;
+    parseWhitespace(context);
+    if (*context.json == '}') {
+        context.json++;
+        type_ = JSON_OBJECT;
+        return ret;
+    }
+    jsonMember.key = "";
+    while (true) {
+        // 解析key
+        jsonMember.value = std::make_shared<MyJSON>();
+        if (*context.json != '"') return PARSE_MISS_KEY;
+        ret = parseStringRaw(context, jsonMember.key);
+        if (ret != PARSE_OK) break;
+
+        // 冒号
+        parseWhitespace(context);
+        if (*context.json != ':') return PARSE_MISS_COLON;
+        context.json++;
+        parseWhitespace(context);
+
+        // 解析value
+        if (jsonMember.key.empty()) return PARSE_MISS_KEY;
+        ret = jsonMember.value->parseValue(context);
+        if (ret != PARSE_OK) break;
+        value_.jVal.push_back(jsonMember);
+        parseWhitespace(context);
+
+        // 是否又下一个键值对
+        if (*context.json == ',') {
+            context.json++;
+            parseWhitespace(context);
+        } else if (*context.json == '}') {
+            // 该object解析完了
+            context.json++;
+            type_ = JSON_OBJECT;
+            return PARSE_OK;
+        } else {
+            return PARSE_MISS_COMMA_OR_CURLY_BRACKET;
+        }
+    }
 
     return ret;
+}
+
+std::vector<JsonMember> MyJSON::getJsonObject() {
+    assert(type_ == JSON_OBJECT);
+    return value_.jVal;
 }

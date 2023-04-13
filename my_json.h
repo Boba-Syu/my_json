@@ -26,9 +26,18 @@ enum JSONParseResult {
     PARSE_INVALID_STRING_CHAR,
     PARSE_INVALID_UNICODE_SURROGATE,
     PARSE_INVALID_UNICODE_HEX,
-    PARSE_MISS_COMMA_OR_SQUARE_BRACKET
+    PARSE_MISS_COMMA_OR_SQUARE_BRACKET,
+    PARSE_MISS_KEY,
+    PARSE_MISS_COLON,
+    PARSE_MISS_COMMA_OR_CURLY_BRACKET
 };
 
+class MyJSON;
+
+struct JsonMember {
+    std::string key;
+    std::shared_ptr<MyJSON> value;
+};
 
 class MyJSON {
 public:
@@ -44,15 +53,17 @@ public:
 
     std::vector<MyJSON> getArray();
 
+    std::vector<JsonMember> getJsonObject();
+
 private:
+
     struct JSONValue {
         double nVal;
         std::string sVal;
-        std::shared_ptr<MyJSON> *jVal;
+        std::vector<JsonMember> jVal;
         std::vector<MyJSON> arrVal;
 
-        JSONValue() : nVal(0), sVal(""), jVal(nullptr), arrVal({}) {}
-
+        JSONValue() : nVal(0), sVal(""), jVal({}), arrVal({}) {}
     };
 
     struct MyContext {
@@ -83,11 +94,14 @@ private:
 
     JSONParseResult parseString(MyContext &);
 
+    JSONParseResult parseStringRaw(MyContext &, std::string &);
+
     JSONParseResult parseObject(MyContext &);
 
-    void setString(std::stack<char> &chStack);
+    void setString(std::stack<char> &chStack, std::string &);
 
     JSONParseResult parseArray(MyContext &context);
+
 };
 
 #endif //MY_JSON_MY_JSON_H
