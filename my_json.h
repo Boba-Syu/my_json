@@ -10,6 +10,7 @@
 #include <iostream>
 #include <vector>
 #include <stack>
+#include <map>
 
 enum JSONType {
     JSON_NULL, JSON_FALSE, JSON_TRUE, JSON_NUMBER, JSON_STRING, JSON_ARRAY, JSON_OBJECT
@@ -32,11 +33,8 @@ enum JSONParseResult {
     PARSE_MISS_COMMA_OR_CURLY_BRACKET
 };
 
-class MyJSON;
-
-struct JsonMember {
-    std::string key;
-    std::shared_ptr<MyJSON> value;
+enum JSONStringifyResult {
+    STRINGIFY_OK
 };
 
 class MyJSON {
@@ -53,14 +51,24 @@ public:
 
     std::vector<MyJSON> getArray();
 
-    std::vector<JsonMember> getJsonObject();
+    JSONStringifyResult jsonStringify(char *&);
+
+    JSONStringifyResult jsonStringify(std::string &json);
+
+    std::vector<std::string> getKeys();
+
+    MyJSON getValueFromKey(std::string key);
+
+    void MyJSON::setValueToKey(std::string, MyJSON);
+
+    bool operator==(const MyJSON &) const;
 
 private:
 
     struct JSONValue {
         double nVal;
         std::string sVal;
-        std::vector<JsonMember> jVal;
+        std::map<std::string, MyJSON> jVal;
         std::vector<MyJSON> arrVal;
 
         JSONValue() : nVal(0), sVal(""), jVal({}), arrVal({}) {}
@@ -102,6 +110,23 @@ private:
 
     JSONParseResult parseArray(MyContext &context);
 
+
+    JSONStringifyResult numberStringify(std::string &);
+
+    JSONStringifyResult nullStringify(std::string &);
+
+    JSONStringifyResult trueStringify(std::string &json);
+
+    JSONStringifyResult falseStringify(std::string &json);
+
+    JSONStringifyResult stringStringify(std::string &sjson);
+
+    JSONStringifyResult arrayStringify(std::string &sjson);
+
+    JSONStringifyResult objectStringify(std::string &sjson);
+
+    JSONStringifyResult stringStringifyRaw(std::string &sjson, const std::string &value);
 };
+
 
 #endif //MY_JSON_MY_JSON_H

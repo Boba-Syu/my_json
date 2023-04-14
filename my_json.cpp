@@ -1,6 +1,7 @@
 //
 // Created by 19148 on 2023/4/12.
 //
+#include <algorithm>
 #include "my_json.h"
 
 double MyJSON::getNumber() {
@@ -295,6 +296,7 @@ JSONParseResult MyJSON::parseArray(MyContext &context) {
             value_.arrVal.push_back(subJson);
             context.json++;
         } else if (*context.json == ']') {
+            value_.arrVal.push_back(subJson);
             context.json++;
             type_ = JSON_ARRAY;
             return PARSE_OK;
@@ -307,19 +309,18 @@ JSONParseResult MyJSON::parseObject(MyJSON::MyContext &context) {
     assert(*context.json == '{');
     context.json++;
     JSONParseResult ret = PARSE_OK;
-    JsonMember jsonMember;
     parseWhitespace(context);
     if (*context.json == '}') {
         context.json++;
         type_ = JSON_OBJECT;
         return ret;
     }
-    jsonMember.key = "";
+    std::string key = "";
     while (true) {
         // 解析key
-        jsonMember.value = std::make_shared<MyJSON>();
+        MyJSON value;
         if (*context.json != '"') return PARSE_MISS_KEY;
-        ret = parseStringRaw(context, jsonMember.key);
+        ret = parseStringRaw(context, key);
         if (ret != PARSE_OK) break;
 
         // 冒号
@@ -329,10 +330,10 @@ JSONParseResult MyJSON::parseObject(MyJSON::MyContext &context) {
         parseWhitespace(context);
 
         // 解析value
-        if (jsonMember.key.empty()) return PARSE_MISS_KEY;
-        ret = jsonMember.value->parseValue(context);
+        if (key.empty()) return PARSE_MISS_KEY;
+        ret = value.parseValue(context);
         if (ret != PARSE_OK) break;
-        value_.jVal.push_back(jsonMember);
+        value_.jVal[key] = value;
         parseWhitespace(context);
 
         // 是否又下一个键值对
@@ -352,7 +353,200 @@ JSONParseResult MyJSON::parseObject(MyJSON::MyContext &context) {
     return ret;
 }
 
-std::vector<JsonMember> MyJSON::getJsonObject() {
+JSONStringifyResult MyJSON::jsonStringify(char *&json) {
+    std::string sjson = "";
+    auto ret = jsonStringify(sjson);
+    json = sjson.data();
+    return ret;
+}
+
+JSONStringifyResult MyJSON::jsonStringify(std::string &json) {
+    std::string sjson = "";
+    JSONStringifyResult ret = STRINGIFY_OK;
+    switch (type_) {
+        case JSON_TRUE:
+            ret = trueStringify(sjson);
+            break;
+        case JSON_FALSE:
+            ret = falseStringify(sjson);
+            break;
+        case JSON_NULL:
+            ret = nullStringify(sjson);
+            break;
+        case JSON_NUMBER:
+            ret = numberStringify(sjson);
+            break;
+        case JSON_STRING:
+            ret = stringStringify(sjson);
+            break;
+        case JSON_ARRAY:
+            ret = arrayStringify(sjson);
+            break;
+        case JSON_OBJECT:
+            ret = objectStringify(sjson);
+            break;
+    }
+    json += sjson;
+    return ret;
+}
+
+JSONStringifyResult MyJSON::trueStringify(std::string &sjson) {
+    sjson += "true";
+    return STRINGIFY_OK;
+}
+
+JSONStringifyResult MyJSON::falseStringify(std::string &sjson) {
+    sjson += "false";
+    return STRINGIFY_OK;
+}
+
+JSONStringifyResult MyJSON::nullStringify(std::string &sjson) {
+    sjson += "null";
+    return STRINGIFY_OK;
+}
+
+JSONStringifyResult MyJSON::numberStringify(std::string &sjson) {
+    assert(type_ == JSON_NUMBER);
+    char buffer[32];
+    sprintf(buffer, "%.17g", value_.nVal);
+    sjson += buffer;
+    return STRINGIFY_OK;
+}
+
+JSONStringifyResult MyJSON::stringStringifyRaw(std::string &sjson, const std::string &value) {
+    sjson += '"';
+    for (char ch: value) {
+        switch (ch) {
+            case '\"':
+                sjson += "\\\"";
+                break;
+            case '\n':
+                sjson += "\\n";
+                break;
+            case '\\':
+                sjson += "\\\\";
+                break;
+            case '\b':
+                sjson += "\\b";
+                break;
+            case '\f':
+                sjson += "\\f";
+                break;
+            case '\r':
+                sjson += "\\r";
+                break;
+            case '\t':
+                sjson += "\\t";
+                break;
+            default:
+                if (ch < 0x20) {
+                    char buffer[7];
+                    sprintf(buffer, "\\u%04X", ch);
+                    sjson += buffer;
+                } else
+                    sjson += ch;
+        }
+    }
+    sjson += '"';
+    return STRINGIFY_OK;
+}
+
+JSONStringifyResult MyJSON::stringStringify(std::string &sjson) {
+    assert(type_ == JSON_STRING);
+    stringStringifyRaw(sjson, value_.sVal);
+    return STRINGIFY_OK;
+}
+
+JSONStringifyResult MyJSON::arrayStringify(std::string &sjson) {
+    assert(type_ == JSON_ARRAY);
+    auto ret = STRINGIFY_OK;
+    sjson += '[';
+    for (auto iter = value_.arrVal.begin(); iter != value_.arrVal.end(); iter++) {
+        ret = iter->jsonStringify(sjson);
+        if ((iter + 1) != value_.arrVal.end()) {
+            sjson += ',';
+        }
+    }
+    sjson += ']';
+    return ret;
+}
+
+JSONStringifyResult MyJSON::objectStringify(std::string &sjson) {
     assert(type_ == JSON_OBJECT);
-    return value_.jVal;
+    auto ret = STRINGIFY_OK;
+    sjson += '{';
+    for (auto [key, value]: value_.jVal) {
+        ret = stringStringifyRaw(sjson, key);
+        sjson += ':';
+        ret = value.jsonStringify(sjson);
+    }
+    sjson += '}';
+    return ret;
+}
+
+std::vector<std::string> MyJSON::getKeys() {
+    assert(type_ = JSON_OBJECT);
+    std::vector<std::string> ret;
+    std::for_each(value_.jVal.begin(), value_.jVal.end(),
+                  [&ret](std::pair<std::string, MyJSON> member) { ret.push_back(member.first); });
+    return ret;
+}
+
+MyJSON MyJSON::getValueFromKey(std::string key) {
+    if (type_ == JSON_OBJECT) {
+        for (auto [k, v]: value_.jVal) {
+            if (k == key) {
+                return v;
+            }
+        }
+    }
+    throw std::exception("json don't has that key");
+}
+
+void MyJSON::setValueToKey(std::string key, MyJSON myJson) {
+    assert(type_ == JSON_OBJECT);
+    value_.jVal[key] = myJson;
+}
+
+bool arrEquals(const std::vector<MyJSON> &arr1, const std::vector<MyJSON> &arr2) {
+    int ret = arr1.size() == arr2.size();
+    if (ret) {
+        for (int i = 0; i < arr1.size(); i++) {
+            ret = ret && arr1[i] == arr2[i];
+        }
+    }
+    return ret;
+}
+
+
+bool objEquals(std::map<std::string, MyJSON> map1, std::map<std::string, MyJSON> map2) {
+    bool ret = map1.size() == map2.size();
+    if (ret) {
+        for (auto [key, value]: map1) {
+            ret = ret && value == map2[key];
+        }
+    }
+    return ret;
+}
+
+
+bool MyJSON::operator==(const MyJSON &json) const {
+    bool ret = type_ == json.type_;
+    if (ret) {
+        switch (type_) {
+            case JSON_TRUE:
+            case JSON_FALSE:
+            case JSON_NULL:
+                return ret;
+            case JSON_NUMBER:
+                return value_.nVal == json.value_.nVal;
+            case JSON_STRING:
+                return value_.sVal == json.value_.sVal;
+            case JSON_ARRAY:
+                return arrEquals(value_.arrVal, json.value_.arrVal);
+            case JSON_OBJECT:
+                return objEquals(value_.jVal, value_.jVal);
+        }
+    }
+    return ret;
 }
